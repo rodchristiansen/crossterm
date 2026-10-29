@@ -110,10 +110,8 @@ impl EventSource for UnixInternalEventSource {
                             match self.tty_fd.read(&mut self.tty_buffer) {
                                 Ok(read_count) => {
                                     if read_count > 0 {
-                                        self.parser.advance(
-                                            &self.tty_buffer[..read_count],
-                                            read_count == TTY_BUFFER_SIZE,
-                                        );
+                                        self.parser
+                                            .buffer_external_input(&self.tty_buffer[..read_count]);
                                     }
                                 }
                                 Err(e) => {
@@ -504,6 +502,22 @@ mod tests {
             Some(InternalEvent::Event(Event::Key(KeyCode::Char('z').into())))
         );
         assert_eq!(parser.next(), None);
+    }
+
+    #[test]
+    fn color_response_split_after_escape_is_not_emitted_as_keys() {
+        use crate::event::internal::OscColorPayload;
+        let (mut source, mut writer) = source_with_input();
+        writer.write_all(b"\x1b").unwrap();
+        assert_eq!(source.try_read(Some(Duration::ZERO)).unwrap(), None);
+        writer.write_all(b"]10;rgb:ffff/0000/0000\x07").unwrap();
+        assert_eq!(
+            source.try_read(Some(Duration::from_millis(50))).unwrap(),
+            Some(InternalEvent::OscColor {
+                slot: 10,
+                payload: OscColorPayload::Rgb { r: 255, g: 0, b: 0 }
+            })
+        );
     }
 
     #[test]
