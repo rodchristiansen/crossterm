@@ -161,14 +161,14 @@ struct StreamFilter(bool);
 
 impl Filter for StreamFilter {
     fn eval(&self, event: &InternalEvent) -> bool {
-        #[cfg(unix)]
-        if self.0
-            && matches!(
+        if self.0 {
+            #[cfg(unix)]
+            if matches!(
                 event,
                 InternalEvent::OscColor { .. } | InternalEvent::ColorSchemeChanged { .. }
-            )
-        {
-            return true;
+            ) {
+                return true;
+            }
         }
         EventFilter.eval(event)
     }
