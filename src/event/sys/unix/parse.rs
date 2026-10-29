@@ -234,6 +234,12 @@ pub(crate) fn parse_csi(buffer: &[u8]) -> io::Result<Option<InternalEvent>> {
         b'?' => match buffer[buffer.len() - 1] {
             b'u' => return parse_csi_keyboard_enhancement_flags(buffer),
             b'c' => return parse_csi_primary_device_attributes(buffer),
+            b'n' if buffer == b"\x1b[?997;1n" => {
+                return Ok(Some(InternalEvent::ColorSchemeChanged { dark: true }));
+            }
+            b'n' if buffer == b"\x1b[?997;2n" => {
+                return Ok(Some(InternalEvent::ColorSchemeChanged { dark: false }));
+            }
             _ => None,
         },
         b'0'..=b'9' => {
