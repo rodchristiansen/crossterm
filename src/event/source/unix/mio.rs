@@ -110,10 +110,8 @@ impl EventSource for UnixInternalEventSource {
                             match self.tty_fd.read(&mut self.tty_buffer) {
                                 Ok(read_count) => {
                                     if read_count > 0 {
-                                        self.parser.advance(
-                                            &self.tty_buffer[..read_count],
-                                            read_count == TTY_BUFFER_SIZE,
-                                        );
+                                        self.parser
+                                            .buffer_external_input(&self.tty_buffer[..read_count]);
                                     }
                                 }
                                 Err(e) => {
@@ -455,6 +453,71 @@ mod tests {
             UnixInternalEventSource::from_file_descriptor(reader).unwrap(),
             writer,
         )
+    }
+
+    #[test]
+    #[cfg(feature = "bracketed-paste")]
+    fn fragmented_appearance_reports_preserve_keys_and_bracketed_paste() {
+        use crate::event::internal::OscColorPayload;
+        let mut parser = Parser::default();
+        let mut events = Vec::new();
+        for byte in b"a\x1b]10;rgb:ffff/ffff/ffff\x1b\\b\x1b[200~\x1b[?997;2n paste\x1b[201~\x1b[?997;1n\x1b]11;rgb:0000/0000/0000\x07c" {
+            parser.advance(&[*byte], true);
+            events.extend(parser.by_ref());
+        }
+        assert_eq!(
+            events,
+            vec![
+                InternalEvent::Event(Event::Key(KeyCode::Char('a').into())),
+                InternalEvent::OscColor {
+                    slot: 10,
+                    payload: OscColorPayload::Rgb {
+                        r: 255,
+                        g: 255,
+                        b: 255
+                    }
+                },
+                InternalEvent::Event(Event::Key(KeyCode::Char('b').into())),
+                InternalEvent::Event(Event::Paste("\x1b[?997;2n paste".into())),
+                InternalEvent::ColorSchemeChanged { dark: true },
+                InternalEvent::OscColor {
+                    slot: 11,
+                    payload: OscColorPayload::Rgb { r: 0, g: 0, b: 0 }
+                },
+                InternalEvent::Event(Event::Key(KeyCode::Char('c').into())),
+            ]
+        );
+    }
+
+    #[test]
+    fn light_and_invalid_color_scheme_reports_do_not_become_keys() {
+        let mut parser = Parser::default();
+        parser.advance(b"\x1b[?997;2n\x1b[?997;3nz", false);
+        assert_eq!(
+            parser.next(),
+            Some(InternalEvent::ColorSchemeChanged { dark: false })
+        );
+        assert_eq!(
+            parser.next(),
+            Some(InternalEvent::Event(Event::Key(KeyCode::Char('z').into())))
+        );
+        assert_eq!(parser.next(), None);
+    }
+
+    #[test]
+    fn color_response_split_after_escape_is_not_emitted_as_keys() {
+        use crate::event::internal::OscColorPayload;
+        let (mut source, mut writer) = source_with_input();
+        writer.write_all(b"\x1b").unwrap();
+        assert_eq!(source.try_read(Some(Duration::ZERO)).unwrap(), None);
+        writer.write_all(b"]10;rgb:ffff/0000/0000\x07").unwrap();
+        assert_eq!(
+            source.try_read(Some(Duration::from_millis(50))).unwrap(),
+            Some(InternalEvent::OscColor {
+                slot: 10,
+                payload: OscColorPayload::Rgb { r: 255, g: 0, b: 0 }
+            })
+        );
     }
 
     #[test]

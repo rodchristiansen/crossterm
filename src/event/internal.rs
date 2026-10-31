@@ -78,6 +78,9 @@ pub(crate) enum InternalEvent {
     /// Attributes and architectural class of the terminal.
     #[cfg(unix)]
     PrimaryDeviceAttributes,
+    /// A DECSET 2031 color-scheme report.
+    #[cfg(unix)]
+    ColorSchemeChanged { dark: bool },
     /// OSC color response (`slot`, `payload`).
     #[cfg(unix)]
     OscColor { slot: u8, payload: OscColorPayload },
